@@ -7,3 +7,19 @@ Line 188: What is the idea of rendering screen? Render = capture?
 line 195: WHy not care about env observation and diagnostric info?
 
 How to set up enviroment on Adept RL and traing on GPU, set up on Tensorboard?
+
+conda create -n cartpole python=3.8
+conda activate cartpole
+python setup.py develop
+
+open the project in new window
+File => Setting => Project: Project name
+Python Interpreter => THe circle image => add => Existing environmmnet => ... => anaconda3 => env => "environment name" => bin => python
+=> OK
+
+=> Run on Banshee
+rsync -r /home/minhtnguyen/Documents/myproject/Tutorials/CartPole_DQN_Project /media/banshee/users/minh/
+ssh heron@banshee
+PW: HeronR&D
+
+Go to the directory of the project containing the set up then redo step 1 of conda create

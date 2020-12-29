@@ -335,7 +335,6 @@ def get_moving_average(period, values):  # Plot 100 episode moving average
         moving_avg = torch.zeros(len(values))
         return moving_avg.numpy()
 
-
 # Testing plot() Function
 # plot(np.random.rand(300), 100)
 

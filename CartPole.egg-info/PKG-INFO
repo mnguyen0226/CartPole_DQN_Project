@@ -1,0 +1,18 @@
+Metadata-Version: 2.1
+Name: CartPole
+Version: 0.1
+Summary: Reinforcement Learning Framework
+Home-page: UNKNOWN
+Author: Minh Nguyen
+Author-email: mnguyen0226@vt.edu
+License: GNU
+Description: # CartPole_DQN_Project
+        DQN: Reinforcement Learning - Cartpole with Code Gym 
+        
+        Learned: DQN - Heron Systems Internship Winter 2020
+        
+        Credit: Deeplizard
+        
+Platform: UNKNOWN
+Requires-Python: >=3.5.0
+Description-Content-Type: text/markdown
