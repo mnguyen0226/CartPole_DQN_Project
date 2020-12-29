@@ -60,6 +60,7 @@ if is_ipython: from IPython import display
 
 # Build network: #################################################
 """
+    DEEP Q NETWORK
     Class DQN enheritance from the network Module class allow for keeping track of weights
         3 Linear Layer with relu activation function
     @param: img_height = number of pixel of image's height
@@ -81,6 +82,7 @@ class DQN(nn.Module):
 
         return t
 
+# EXPERIENCE
 # Experience tuple object named Experience storing tuple of state, action, next_state, rewards
 Experience = namedtuple(
     'Experience',
@@ -88,6 +90,7 @@ Experience = namedtuple(
 )
 
 """
+    REPLAY MEMORY
     ReplayMemory class: store the experience in memory arrays
     @param: capacity = capacity of the ReplayMemory object
 """
@@ -118,6 +121,7 @@ class ReplayMemory():
         return len(self.memory) >= batch_size
 
 """
+    EPSILON GREEDY STRATEGY
     Class EpsilonGreedyStrategy: Determine whether to explore or exploit or not
     @param: start = start of the exploration 
             end = end of the exploration
@@ -134,6 +138,7 @@ class EpsilonGreedyStrategy():
         return self.end + (self.start - self.end) * math.exp(-1. * current_step * self.decay)
 
 """
+    RL AGENT
     Class Agent: 
     @param: strategy = exploration or exploitation
             num_actions = number of action in an episode
@@ -162,6 +167,7 @@ class Agent():
                     self.device)  # exploit
 
 """
+    ENVIRONMENT MANAGER
     Class CartPole Environment Manager
         Function set up environment for GYM CartPole
     @param: device: cpu or gpu
@@ -188,22 +194,31 @@ class CartPoleEnvManager():
     def render(self, mode='human'): # Function is called to render the current state to the screen
         return self.env.render(mode) # return numpy array version of the rendered screen
 
+    # NUMBER OF ACTION AVAILABLE TO AGENT
     def num_actions_available(self):  # agent can have 2 action left or right
         return self.env.action_space.n # return number of actions availabel to the agent in the environemnt
 
-    def take_action(self, action):  # execute an action
+    # TAKE ACTION IN THE ENVIRONMENT
+    # Note OUTPUT: that we have item since we want the return of tensor since we want the input and output to be consistent as tensor
+    def take_action(self, action):  # execute an action.
         #  Function return tuple (env observation, reward, episode end or not, dianogstic info)
         _, reward, self.done, _ = self.env.step(
             action.item())  # we only care about the reward and the episode ended or not
         return torch.tensor([reward], device=self.device)
 
+    # START AN EPISODE
+    # Note: the current screen is None in the coinstructor and none in the environment is reset
     def just_starting(self):  # return true if current screen is none
         return self.current_screen is None
 
+    # GET THE STATE OF THE ENVIRONMENT:
+    # A single state in env = different between current screen and previous screen => Take velocigy of the pole into account from 1 single images
     def get_state(
             self):  # return the current state of the environment in the form of the process of the screen
-        if self.just_starting() or self.done:
-            self.current_screen = self.get_processed_screen()
+        if self.just_starting() or self.done: # Check if we start or done with the episode
+            # Note: if we just start, the initial screen has not been rendered from the initial observation in the env
+            #       if done, the last action taken by the agent ended the episode
+            self.current_screen = self.get_processed_screen() # if just start, so previous screen is black; if end, then next screen also black
             black_screen = torch.zeros_like(self.current_screen)
             return black_screen
         else:  # in the middle of the episode
@@ -212,6 +227,7 @@ class CartPoleEnvManager():
             self.current_screen = s2
             return s2 - s1
 
+    # PROCESS SCREEN IMAGE
     def get_screen_height(self):  # get height of screen
         screen = self.get_processed_screen()
         return screen.shape[2]
@@ -226,6 +242,7 @@ class CartPoleEnvManager():
         screen = self.crop_screen(screen)
         return self.transform_screen_data(screen)
 
+    # CROP SCREEN IMAGE
     def crop_screen(self, screen):
         screen_height = screen.shape[1]
 
@@ -235,6 +252,7 @@ class CartPoleEnvManager():
         screen = screen[:, top:bottom, :]  # strip top 40% and bottom 20%
         return screen
 
+    # CONVERT AND RESCALE SCREEN IMAGE DATA
     def transform_screen_data(self, screen):
         # Convert to float, rescale, convert to tensor
         screen = np.ascontiguousarray(screen,
@@ -264,7 +282,7 @@ def extract_tensors(experiences):  # Take in batch of experience
     return (t1, t2, t3, t4)
 
 
-# Q-Value Calculator:
+# Q-Value Calculator: for the current state using the policy net, the next state using the target net
 class QValues():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -274,7 +292,7 @@ class QValues():
         return policy_net(states).gather(dim=1, index=actions.unsqueeze(-1))
 
     @staticmethod
-    # Find out if any final state in our next state tensor, if we do, need to find where they are so we don't pass them to the target net
+    # Find out if any final state in our next state tensor (since the agent is unable to recieve any reward once an episode is ended), if we do, need to find where they are so we don't pass them to the target net
     def get_next(target_net,
                  next_states):  # return the max Qvalue predicted by the target net among all possible next actions
         final_state_locations = next_states.flatten(start_dim=1).max(dim=1)[
@@ -305,7 +323,7 @@ def plot(values,
           "episode moving avg: ", moving_avg[-1])
     if is_ipython: display.clear_output(wait=True)
 
-
+# Transform the value to tensor, then check if len of value >= period, we want to have enought episodes to train
 def get_moving_average(period, values):  # Plot 100 episode moving average
     values = torch.tensor(values, dtype=torch.float)
     if len(values) >= period:
@@ -324,11 +342,13 @@ def get_moving_average(period, values):  # Plot 100 episode moving average
 def main():
     print("Running")
     batch_size = 256
-    gamma = 0.999
+    gamma = 0.999 # discount factor used the Bellman equation
+
     eps_start = 1  # epsilon: exploration rate
     eps_end = 0.01
     eps_decay = 0.001
-    target_update = 10  # how frequently in term of episode, we update the network weights with the policy network weights
+
+    target_update = 10  # update the target network every 10 episode
     memory_size = 100000
     lr = 0.001
     num_episodes = 1000
@@ -339,6 +359,7 @@ def main():
     agent = Agent(strategy, em.num_actions_available(), device)
     memory = ReplayMemory(memory_size)
 
+    # Initializer policy network with random state
     policy_net = DQN(em.get_screen_height(), em.get_screen_width()).to(device)
     target_net = DQN(em.get_screen_height(), em.get_screen_width()).to(device)
     target_net.load_state_dict(policy_net.state_dict())
@@ -352,23 +373,32 @@ def main():
         state = em.get_state()  # get initial state
 
         for timestep in count():
+            # Set action: explore or exploit, receive reward, then get to the next state
             action = agent.select_action(state, policy_net)
             reward = em.take_action(action)
             next_state = em.get_state()
+
+            # Create an experience and push onto replay memeory
             memory.push(Experience(state, action, next_state,
                                    reward))  # create experience and push to memory
             state = next_state
 
-            # check if can get a sample from replay memory to train the policy net
+            # Agent got experience, check if can get a sample from replay memory to train the policy net
             if memory.can_provide_sample(batch_size):
                 experiences = memory.sample(batch_size)
+
                 states, actions, rewards, next_states = extract_tensors(
                     experiences)
 
+                # get current = return the q value for any given state-action pair as prediced from the policy network
                 current_q_values = QValues.get_current(policy_net, states,
                                                        actions)
+
+                # get the qvalues for the next states in the batch
                 next_q_values = QValues.get_next(target_net, next_states)
-                target_q_values = (next_q_values * gamma) + rewards
+
+                # Calculate the target q value => Research paper equation
+                target_q_values = (next_q_values * gamma) + rewards # gamma = discount rate
 
                 loss = F.mse_loss(current_q_values,
                                   target_q_values.unsqueeze(1))
