@@ -1,7 +1,13 @@
 """
+    Minh T Nguyen
+    Dec 28, 2020
+    Project: Cart & Pole Problem.
+
+    *** NOTE ***
     DQN:
         Experience Replay and Replay memory:
             e(t) = (s(t), a(t), r(t), s(t+1)) # Experience
+
     Step:
         1/ Initialize replay memory capacity
         2/ Initialize the network with random weights
@@ -19,13 +25,13 @@
                     * Requires a second pass to the nework for the next state
                 9/ Gradient descent updates weights in the policy network to minimize loss
                     * After x timestep, weights in the target network are updated to the weights in the policy network
+
     The Policy network: Optimize the policy by finding the optimal q functions
 
     The Target Network: Instead of using the same network to calculate both prediction and target, we use a separate network
         => Enhance stability!
-
-    Project: Cart & Pole Problem.
 """
+
 import gym
 import math
 import random
@@ -44,8 +50,7 @@ import torchvision.transforms as T
 is_ipython = 'inline' in matplotlib.get_backend()
 if is_ipython: from IPython import display
 
-
-# S1: Set up environment: ######################################### Example
+# Check environment wise, no training yet ########################
 # env = gym.make('CartPole-v0')
 # env.reset()
 # for _ in range(1000):
@@ -53,11 +58,16 @@ if is_ipython: from IPython import display
 #     env.step(env.action_space.sample())
 # env.close()
 
-# S2: Build network: ##############################################
+# Build network: #################################################
+"""
+    Class DQN enheritance from the network Module class allow for keeping track of weights
+        3 Linear Layer with relu activation function
+    @param: img_height = number of pixel of image's height
+            img_width = number of pixel of image's width
+"""
 class DQN(nn.Module):
     def __init__(self, img_height, img_width):
         super().__init__()
-
         self.fc1 = nn.Linear(in_features=img_height * img_width * 3,
                              out_features=24)
         self.fc2 = nn.Linear(in_features=24, out_features=32)
@@ -71,15 +81,16 @@ class DQN(nn.Module):
 
         return t
 
-
-# Create an Experience Class: tuple_name, what are the field of a tuple
+# Experience tuple object named Experience storing tuple of state, action, next_state, rewards
 Experience = namedtuple(
     'Experience',
     ('state', 'action', 'next_state', 'reward')
 )
 
-
-# Create class Replay_Memory: store the experience.
+"""
+    ReplayMemory class: store the experience in memory arrays
+    @param: capacity = capacity of the ReplayMemory object
+"""
 class ReplayMemory():
     def __init__(self, capacity):
         self.capacity = capacity
@@ -88,7 +99,8 @@ class ReplayMemory():
 
     # push store experience into memory array
     def push(self, experience):
-        # check capacity
+
+        # if the memory array less than the capacity of the ReplayMemory object
         if len(self.memory) < self.capacity:
             self.memory.append(experience)
         else:
@@ -96,7 +108,7 @@ class ReplayMemory():
             self.memory[self.push_count % self.capacity] = experience
         self.push_count += 1
 
-    # Sample used in training DQN
+    # Sample of random experience used in training DQN with the size of batch size
     def sample(self, batch_size):
         return random.sample(self.memory, batch_size)
 
@@ -105,20 +117,29 @@ class ReplayMemory():
     def can_provide_sample(self, batch_size):
         return len(self.memory) >= batch_size
 
-
-# Epsilon Greedy Strategy class: determine to explore or exploit
+"""
+    Class EpsilonGreedyStrategy: Determine whether to explore or exploit or not
+    @param: start = start of the exploration 
+            end = end of the exploration
+            decay = decaying rate of the exploration_rate which is set initially to 1
+"""
 class EpsilonGreedyStrategy():
     def __init__(self, start, end, decay):
         self.start = start
         self.end = end
         self.decay = decay
 
+    # math equation in research paper
     def get_exploration_rate(self, current_step):
-        return self.end + (self.start - self.end) * math.exp(
-            -1. * current_step * self.decay)
+        return self.end + (self.start - self.end) * math.exp(-1. * current_step * self.decay)
 
-
-# RL Agent require strategy and num_action
+"""
+    Class Agent: 
+    @param: strategy = exploration or exploitation
+            num_actions = number of action in an episode
+            device = cpu or gpu
+    Note: since we want the result of the forward pass, no need to track the gradient
+"""
 class Agent():
     def __init__(self, strategy, numn_actions, device):
         self.current_step = 0  # Current step number in the environment
@@ -126,9 +147,9 @@ class Agent():
         self.num_actions = numn_actions  # how many possible actions can the agent take from a given state
         self.device = device
 
+    # function determine the exploration rate => research paper
     def select_action(self, state, policy_net):
-        rate = self.strategy.get_exploration_rate(
-            self.current_step)  # exploration rate
+        rate = self.strategy.get_exploration_rate(self.current_step)  # exploration rate
         self.current_step += 1
 
         if rate > random.random():  # Check if larger than number (0,1)
@@ -140,29 +161,35 @@ class Agent():
                 return policy_net(state).argmax(dim=1).to(
                     self.device)  # exploit
 
-
-# Class manager cart pole environment
+"""
+    Class CartPole Environment Manager
+        Function set up environment for GYM CartPole
+    @param: device: cpu or gpu
+"""
 class CartPoleEnvManager():
     def __init__(self, device):  # Function create environment class
         self.device = device
+
+        # unwrapped give us access to behind-the-scene dynamics of the environment
         self.env = gym.make('CartPole-v0').unwrapped
         self.env.reset()
-        self.current_screen = None  # Track current screen: none = start of the episode and has not yet render the screen of an episode
+
+        # Current screen track the current screen at any given time, None = we at the start of the episode and have not yet render the screen of intial observation
+        self.current_screen = None
         self.done = False
 
-    def reset(
-            self):  # reset at the end of the episode so the current screen can be none
-        self.env.reset()
-        self.current_screen = None
+    def reset(self):  # reset at the end of the episode so the current screen can be none
+        self.env.reset() # reset the environment, function from GYM lib
+        self.current_screen = None # None = we are at the start of the episode and have not yet rendered the screen of the initial observation
 
-    def close(self):
+    def close(self): # Function call to close the env when we finish it.
         self.env.close()
 
-    def render(self, mode='human'):
-        return self.env.render(mode)
+    def render(self, mode='human'): # Function is called to render the current state to the screen
+        return self.env.render(mode) # return numpy array version of the rendered screen
 
     def num_actions_available(self):  # agent can have 2 action left or right
-        return self.env.action_space.n
+        return self.env.action_space.n # return number of actions availabel to the agent in the environemnt
 
     def take_action(self, action):  # execute an action
         #  Function return tuple (env observation, reward, episode end or not, dianogstic info)

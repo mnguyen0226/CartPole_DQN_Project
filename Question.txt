@@ -1,0 +1,9 @@
+Line 151: How does the constructor connect strategy to the class without classing that class?
+
+Does this a general implementatio of RL Agent?
+
+Line 188: What is the idea of rendering screen? Render = capture?
+
+line 195: WHy not care about env observation and diagnostric info?
+
+How to set up enviroment on Adept RL and traing on GPU, set up on Tensorboard?
