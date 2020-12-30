@@ -33,7 +33,7 @@
 
     Import tensorboard
 """
-
+import six
 import gym
 import math
 import random
@@ -44,6 +44,7 @@ from collections import namedtuple
 from itertools import count
 from PIL import Image
 import torch
+import torchvision
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
@@ -53,6 +54,9 @@ from torch.utils.tensorboard import SummaryWriter  # Work with tensorboard
 is_ipython = 'inline' in matplotlib.get_backend()
 if is_ipython: from IPython import display
 
+# # Writer will output to ./runs/ directory
+writer = SummaryWriter("runs/cartpole_plot_3")
+
 # # Check environment wise, no training yet ########################
 # env = gym.make('CartPole-v0')
 # env.reset()
@@ -61,6 +65,8 @@ if is_ipython: from IPython import display
 #     env.step(env.action_space.sample())
 # env.close()
 
+
+
 # Build network: #################################################
 """
     DEEP Q NETWORK
@@ -68,6 +74,7 @@ if is_ipython: from IPython import display
         3 Linear Layer with relu activation function
     @param: img_height = number of pixel of image's height
             img_width = number of pixel of image's width
+    class is call to create a network for training purposes
 """
 class DQN(nn.Module):
     def __init__(self, img_height, img_width):
@@ -78,15 +85,16 @@ class DQN(nn.Module):
         self.out = nn.Linear(in_features=32, out_features=2)
 
     def forward(self, t):
-        t = t.flatten(start_dim=1)
-        t = F.relu(self.fc1(t))
-        t = F.relu(self.fc2(t))
-        t = self.out(t)
+        t = t.flatten(start_dim=1) # flatten pixel
+        t = F.relu(self.fc1(t)) # forward with relu activation function
+        t = F.relu(self.fc2(t)) # forward with relu action valution function
+        t = self.out(t) # output of 2: the probability of left or right
 
         return t
 
 # EXPERIENCE
 # Experience tuple object named Experience storing tuple of state, action, next_state, rewards
+# Useful to keep track of state, action, reward for each Q, this we can decrease the likelihood of less reward agent and enhance the likelihood of the more reward agent
 Experience = namedtuple(
     'Experience',
     ('state', 'action', 'next_state', 'reward')
@@ -94,7 +102,9 @@ Experience = namedtuple(
 
 """
     REPLAY MEMORY
-    ReplayMemory class: store the experience in memory arrays
+    ReplayMemory class: initialize the capacity, push the experience to the memory array
+                        In training process, can be used for sampling randomly the number of experience (batch_size) in the memory array
+                        Also have function allo to check if we have enough experience in memory for set training or not
     @param: capacity = capacity of the ReplayMemory object
 """
 class ReplayMemory():
@@ -125,7 +135,7 @@ class ReplayMemory():
 
 """
     EPSILON GREEDY STRATEGY
-    Class EpsilonGreedyStrategy: Determine whether to explore or exploit or not
+    Class EpsilonGreedyStrategy: determine if the agent should explore of exploit. Equation in the research paper
     @param: start = start of the exploration 
             end = end of the exploration
             decay = decaying rate of the exploration_rate which is set initially to 1
@@ -142,17 +152,17 @@ class EpsilonGreedyStrategy():
 
 """
     RL AGENT
-    Class Agent: 
+    Class Agent: initialize the strategy, keep track of number of action that agent can take, and training device
     @param: strategy = exploration or exploitation
             num_actions = number of action in an episode
             device = cpu or gpu
     Note: since we want the result of the forward pass, no need to track the gradient
 """
 class Agent():
-    def __init__(self, strategy, numn_actions, device):
+    def __init__(self, strategy, num_actions, device):
         self.current_step = 0  # Current step number in the environment
-        self.strategy = strategy
-        self.num_actions = numn_actions  # how many possible actions can the agent take from a given state
+        self.strategy = strategy # how does this call the strategy from epsilongreedy strategy function
+        self.num_actions = num_actions  # how many possible actions can the agent take from a given state
         self.device = device
 
     # function determine the exploration rate => research paper
@@ -172,7 +182,7 @@ class Agent():
 """
     ENVIRONMENT MANAGER
     Class CartPole Environment Manager
-        Function set up environment for GYM CartPole
+        Initialize the device, cartpole environment, reset() (from gym lib), keep track of current screen        
     @param: device: cpu or gpu
 """
 class CartPoleEnvManager():
@@ -194,6 +204,7 @@ class CartPoleEnvManager():
     def close(self): # Function call to close the env when we finish it.
         self.env.close()
 
+    # Function capture the screen
     def render(self, mode='human'): # Function is called to render the current state to the screen
         return self.env.render(mode) # return numpy array version of the rendered screen
 
@@ -202,12 +213,18 @@ class CartPoleEnvManager():
         return self.env.action_space.n # return number of actions availabel to the agent in the environemnt
 
     # TAKE ACTION IN THE ENVIRONMENT
+    # Function take action base on the policy, then return the total number of rewards
     # Note OUTPUT: that we have item since we want the return of tensor since we want the input and output to be consistent as tensor
     def take_action(self, action):  # execute an action.
         #  Function return tuple (env observation, reward, episode end or not, dianogstic info)
         _, reward, self.done, _ = self.env.step(
             action.item())  # we only care about the reward and the episode ended or not
         return torch.tensor([reward], device=self.device)
+
+    def return_reward(self, action):
+        _, reward, self.done, _ = self.env.step(
+            action.item())  # we only care about the reward and the episode ended or not
+        return reward
 
     # START AN EPISODE
     # Note: the current screen is None in the coinstructor and none in the environment is reset
@@ -239,6 +256,7 @@ class CartPoleEnvManager():
         screen = self.get_processed_screen()
         return screen.shape[3]
 
+
     def get_processed_screen(self):
         screen = self.render('rgb_array').transpose((2, 0,
                                                      1))  # render environment as rbg array then render (channel, height, width)
@@ -255,7 +273,7 @@ class CartPoleEnvManager():
         screen = screen[:, top:bottom, :]  # strip top 40% and bottom 20%
         return screen
 
-    # CONVERT AND RESCALE SCREEN IMAGE DATA
+    # CONVERT AND RESCALE SCREEN IMAGE DATA: fetch into a network
     def transform_screen_data(self, screen):
         # Convert to float, rescale, convert to tensor
         screen = np.ascontiguousarray(screen,
@@ -269,10 +287,9 @@ class CartPoleEnvManager():
             T.Resize((40, 90)),
             T.ToTensor()
         ])
-
         return resize(screen).unsqueeze(0).to(self.device)
 
-
+# Transform the batch of experience into experience of batch
 def extract_tensors(experiences):  # Take in batch of experience
     batch = Experience(
         *zip(*experiences))  # tranfer it to experience of batches
@@ -290,23 +307,24 @@ class QValues():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     @staticmethod  # call function without create an instance of class
+    # function get Q value for the current actions with current state => Forward pass
     def get_current(policy_net, states,
                     actions):  # call in main: the state action pairs that sampled from memory
         return policy_net(states).gather(dim=1, index=actions.unsqueeze(-1))
 
     @staticmethod
     # Find out if any final state in our next state tensor (since the agent is unable to recieve any reward once an episode is ended), if we do, need to find where they are so we don't pass them to the target net
+    # function get the Q value for the next state, what is the next state?
     def get_next(target_net,
                  next_states):  # return the max Qvalue predicted by the target net among all possible next actions
-        final_state_locations = next_states.flatten(start_dim=1).max(dim=1)[
+        final_state_locations = next_states.flatten(start_dim=1).max(dim=1)[ # Flatten the images into input for the network
             0].eq(0).type(
             torch.bool)  # look at next state tensor and find location of all final states
         non_final_state_locations = (final_state_locations == False)
         non_final_states = next_states[non_final_state_locations]
         batch_size = next_states.shape[0]
         values = torch.zeros(batch_size).to(QValues.device)
-        values[non_final_state_locations] = \
-        target_net(non_final_states).max(dim=1)[0].detach()
+        values[non_final_state_locations] = target_net(non_final_states).max(dim=1)[0].detach()
         return values
 
 
@@ -320,7 +338,7 @@ def plot(values,
     plt.plot(values)
 
     moving_avg = get_moving_average(moving_avg_period, values)
-    plt.plot(get_moving_average(moving_avg_period, values))
+    plt.plot(moving_avg)
     plt.pause(0.001)
     print("Episode ", len(values), "\n", moving_avg_period,
           "episode moving avg: ", moving_avg[-1])
@@ -341,20 +359,36 @@ def get_moving_average(period, values):  # Plot 100 episode moving average
 # Testing plot() Function
 # plot(np.random.rand(300), 100)
 
+# # Example of non-processed screen
+# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# em = CartPoleEnvManager(device)
+# em.reset()
+# screen = em.render("rgb_array")
+#
+# plt.figure()
+# plt.imshow(screen)
+# plt.title("Non-processed screen example")
+# plt.show()
+
+
 def main():
     print("Running")
+
+    # Initialize hyperparameter
     batch_size = 256
     gamma = 0.999 # discount factor used the Bellman equation
 
+    # for Epsilon Greedy Strategy, there will be start, end, and decay rate
     eps_start = 1  # epsilon: exploration rate
     eps_end = 0.01
     eps_decay = 0.001
 
     target_update = 10  # update the target network every 10 episode
-    memory_size = 100000
+    memory_size = 100000 # size of memory array 10000 episode
     lr = 0.001
-    num_episodes = 1000
+    num_episodes = 1000 # 1 episode = 1 frame?
 
+    # Initialize objects: device, environment, strategy, agent, memory and size
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     em = CartPoleEnvManager(device)
     strategy = EpsilonGreedyStrategy(eps_start, eps_end, eps_decay)
@@ -362,23 +396,35 @@ def main():
     memory = ReplayMemory(memory_size)
 
     # Initializer policy network with random state
-    policy_net = DQN(em.get_screen_height(), em.get_screen_width()).to(device)
+    policy_net = DQN(em.get_screen_height(), em.get_screen_width()).to(device) # policy and target nets are the same
     target_net = DQN(em.get_screen_height(), em.get_screen_width()).to(device)
+
+    # Pytorch's set the same weights and biases in the target_net to be th same as the policy net
     target_net.load_state_dict(policy_net.state_dict())
-    target_net.eval()
+    target_net.eval() # eval mode = tell that this network is not in training mode, for inference only
     optimizer = optim.Adam(params=policy_net.parameters(), lr=lr)
 
     # Training Process:
     episode_durations = []  # Empty list to store events
     for episode in range(num_episodes):
-        em.reset()
+        em.reset() # reset environment
         state = em.get_state()  # get initial state
 
-        for timestep in count():
+        loss_per_episode = 0 # for keeping track and plot loss data
+        reward_per_episode = 0 # for keeping track and plot reward data
+        # Keep doing the action until the momory has eligible number of frame equal to the the batch size
+        for timestep in count(): # iterative tool lib has count
+
+
             # Set action: explore or exploit, receive reward, then get to the next state
+            # Let the agent do the action ,get experience
             action = agent.select_action(state, policy_net)
             reward = em.take_action(action)
-            next_state = em.get_state()
+            actual_reward = em.return_reward(action)
+
+            reward_per_episode += actual_reward # for plotting tensorboard
+
+            next_state = em.get_state() # return what is the next state after doing the action
 
             # Create an experience and push onto replay memeory
             memory.push(Experience(state, action, next_state,
@@ -389,6 +435,7 @@ def main():
             if memory.can_provide_sample(batch_size):
                 experiences = memory.sample(batch_size)
 
+                # turn the batch of experience into experience of batches
                 states, actions, rewards, next_states = extract_tensors(
                     experiences)
 
@@ -404,6 +451,9 @@ def main():
 
                 loss = F.mse_loss(current_q_values,
                                   target_q_values.unsqueeze(1))
+
+                loss_per_episode += loss # For plotting loss per episode after all timestep
+
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
@@ -411,7 +461,30 @@ def main():
             if em.done:  # Break out to start a new episode
                 episode_durations.append(timestep)
                 plot(episode_durations, 100)
+                writer.add_scalar("")
+
+
+                # Tensorboard: Log the the loss and reward of at the end of each episode, log the graph
                 break
+        # Tensorboard ###############3
+        writer.add_scalar("Loss/Episode", loss_per_episode, episode) # y, x
+        writer.add_scalar("Reward/Episode", reward_per_episode, episode)
+
+        # def plot(values,
+        #          moving_avg_period):  # plot the duration of each episode and 100 episode moving averaga
+        #     plt.figure(2)
+        #     plt.clf()
+        #     plt.title("Training")
+        #     plt.xlabel("Episode")
+        #     plt.ylabel("Duration")
+        #     plt.plot(values)
+        #
+        #     moving_avg = get_moving_average(moving_avg_period, values)
+        #     plt.plot(moving_avg)
+        #     plt.pause(0.001)
+        #     print("Episode ", len(values), "\n", moving_avg_period,
+        #           "episode moving avg: ", moving_avg[-1])
+        #     # if is_ipython: display.clear_output(wait=True)
 
         if episode % target_update == 0:  # Check if we should do update in the target net
             target_net.load_state_dict(policy_net.state_dict())
@@ -419,11 +492,12 @@ def main():
     em.close()
 
 
+
 if __name__ == "__main__":
     main()
 
 ##############################################################################
-# # Example of non-processed screen
+# Example of non-processed screen
 # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # em = CartPoleEnvManager(device)
 # em.reset()
