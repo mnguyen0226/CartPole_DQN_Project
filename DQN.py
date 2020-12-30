@@ -30,6 +30,8 @@
 
     The Target Network: Instead of using the same network to calculate both prediction and target, we use a separate network
         => Enhance stability!
+
+    Import tensorboard
 """
 
 import gym
@@ -46,11 +48,12 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 import torchvision.transforms as T
+from torch.utils.tensorboard import SummaryWriter  # Work with tensorboard
 
 is_ipython = 'inline' in matplotlib.get_backend()
 if is_ipython: from IPython import display
 
-# Check environment wise, no training yet ########################
+# # Check environment wise, no training yet ########################
 # env = gym.make('CartPole-v0')
 # env.reset()
 # for _ in range(1000):
@@ -321,7 +324,7 @@ def plot(values,
     plt.pause(0.001)
     print("Episode ", len(values), "\n", moving_avg_period,
           "episode moving avg: ", moving_avg[-1])
-    if is_ipython: display.clear_output(wait=True)
+    # if is_ipython: display.clear_output(wait=True)
 
 # Transform the value to tensor, then check if len of value >= period, we want to have enought episodes to train
 def get_moving_average(period, values):  # Plot 100 episode moving average

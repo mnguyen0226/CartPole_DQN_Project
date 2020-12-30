@@ -23,3 +23,5 @@ ssh heron@banshee
 PW: HeronR&D
 
 Go to the directory of the project containing the set up then redo step 1 of conda create
+
+nano command to edit on terminal
